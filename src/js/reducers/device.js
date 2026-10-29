@@ -15,34 +15,46 @@ const getDefaultState = () => {
 	const isWindows = navigator.userAgent.indexOf("Windows") >= 0;
 	const isInitiallyMouse = typeof (window.matchMedia) === 'function' ? (window.matchMedia('(pointer:fine)').matches || (isWindows && window.matchMedia('(any-pointer:fine)'))) : null;
 	const isInitiallyTouch = !isInitiallyMouse && (typeof(window.matchMedia) === 'function' ? window.matchMedia('(pointer:coarse)').matches : null);
+	const userType = isInitiallyTouch ? 'touch' : 'mouse';
 
 	return {
 		isKeyboardUser: false,
 		isMouseUser: isInitiallyMouse,
 		isSingleColumn: false,
+		isStacked: false,
 		isTouchOrSmall: false,
 		isTouchUser: isInitiallyTouch,
+		lastDetectedUserType: userType,
 		scrollbarWidth: getScrollbarWidth(),
 		shouldUseEditMode: false,
 		shouldUseModalCreatorField: false,
 		shouldUseSidebar: false,
 		shouldUseTabs: false,
-		userType: isInitiallyTouch ? 'touch' : 'mouse',
+		userType,
 		...getViewport(process.env.NODE_ENV === 'test' ? {} : window.innerWidth)
 	}
 };
 
-const getDevice = (userType, viewport, { isEmbedded } = {}) => {
+const getDevice = (userType, viewport, { isEmbedded } = {}, isStackedLayoutPreferred = false) => {
 	const isTouchOrSmall = userType === 'touch' || viewport.xxs || viewport.xs || viewport.sm;
 	const isSingleColumn = viewport.xxs || viewport.xs || (isTouchOrSmall && isEmbedded);
+	const isStacked = userType !== 'touch' && (viewport.md || (viewport.lg && isStackedLayoutPreferred));
 	const shouldUseEditMode = isTouchOrSmall;
 	const shouldUseModalCreatorField = isTouchOrSmall;
 	const shouldUseSidebar = !viewport.lg;
 	const shouldUseTabs = (viewport.md || viewport.lg) && userType !== 'touch';
 
-	return { isSingleColumn, isTouchOrSmall, shouldUseEditMode, shouldUseModalCreatorField,
+	return { isSingleColumn, isStacked, isTouchOrSmall, shouldUseEditMode, shouldUseModalCreatorField,
 		shouldUseSidebar, shouldUseTabs };
 };
+
+const getIsStackedLayoutPreferred = (action, preferences) => {
+	if (action.type === PREFERENCE_CHANGE && action.name === 'layout') {
+		return action.value === 'stacked';
+	}
+
+	return preferences.layout === 'stacked';
+}
 
 const getUserType = (state, action, preferences) => {
 	if (action.type === PREFERENCE_CHANGE && action.name === 'density') {
@@ -53,7 +65,7 @@ const getUserType = (state, action, preferences) => {
 		return preferences.density;
 	}
 
-	if(action.type === TRIGGER_USER_TYPE_CHANGE) {
+	if(action.type === TRIGGER_USER_TYPE_CHANGE && action.userType) {
 		return action.userType;
 	}
 
@@ -78,10 +90,11 @@ const device = (state = getDefaultState(), action, { config, preferences } = {})
 			return {
 				...state,
 				...getUserTypeBooleans(state, action, userType),
-				...getDevice(userType, viewport, config),
+				...getDevice(userType, viewport, config, getIsStackedLayoutPreferred(action, preferences)),
 				...viewport,
-				lastDetectedUserType: action.type === TRIGGER_USER_TYPE_CHANGE ? action.userType : state.lastDetectedUserType,
-				scrollbarWidth: state.userType === 'touch' && userType === 'mouse' ? getScrollbarWidth() : state.scrollbarWidth
+				lastDetectedUserType: action.type === TRIGGER_USER_TYPE_CHANGE && action.userType ? action.userType : state.lastDetectedUserType,
+				scrollbarWidth: state.userType === 'touch' && userType === 'mouse' ? getScrollbarWidth() : state.scrollbarWidth,
+				userType,
 			}
 		}
 		default:
